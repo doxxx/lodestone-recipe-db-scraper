@@ -34,7 +34,7 @@ session = requests_cache.CachedSession()
 def parse_recipe_links_page(base_url, r):
     tree = html.fromstring(r.text)
     rel_links = tree.xpath("//div/@data-ldst-href")
-    links = [urljoin(base_url, rel_link) for rel_link in rel_links]
+    links = [urljoin(base_url, str(rel_link)) for rel_link in rel_links]
     show_end = int(tree.xpath("//span[@class='show_end']/text()")[0])
     total = int(tree.xpath("//span[@class='total']/text()")[0])
     return links, show_end, total
@@ -83,7 +83,7 @@ def fetch_recipe(url):
 
     tree = html.fromstring(pages["en"].result().text)
     recipe = {
-        "name" : { "en": tree.xpath("//h2[contains(@class,'item_name')]/text()")[0] },
+        "name" : { "en": str(tree.xpath("//h2[contains(@class,'item_name')]/text()")[0]) },
         "level" : int(tree.xpath("//div[@class='recipe_level']/span/text()")[0]),
         "difficulty" : int(tree.xpath("//dl/dt[text()='Difficulty']/following-sibling::dd[1]/text()")[0]),
         "durability" : int(tree.xpath("//dl/dt[text()='Durability']/following-sibling::dd[1]/text()")[0]),
@@ -92,7 +92,7 @@ def fetch_recipe(url):
 
     for lang in LANGUAGES:
         tree = html.fromstring(pages[lang].result().text)
-        recipe["name"][lang] = tree.xpath("//h2[contains(@class,'item_name')]/text()")[0]
+        recipe["name"][lang] = str(tree.xpath("//h2[contains(@class,'item_name')]/text()")[0])
 
     return recipe
 
