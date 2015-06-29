@@ -1,3 +1,4 @@
 lxml
 requests
 requests-cache
+requests-futures
