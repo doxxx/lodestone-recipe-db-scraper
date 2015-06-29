@@ -32,6 +32,7 @@ NUM_LEVEL_RANGES = len(LEVEL_RANGE)
 session = requests_cache.CachedSession()
 executor = ThreadPoolExecutor(max_workers=4)
 
+
 def parse_recipe_links_page(r):
     tree = html.fromstring(r.text)
     rel_links = tree.xpath("//div/@data-ldst-href")
@@ -108,6 +109,7 @@ def main():
     for cls in CLASSES:
         scrape_to_file(cls)
     executor.shutdown()
+
 
 if __name__ == '__main__':
     main()
