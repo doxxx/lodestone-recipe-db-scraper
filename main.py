@@ -1,5 +1,6 @@
 import json
 from urllib.parse import urljoin, urlparse, urlunparse
+from concurrent.futures import ThreadPoolExecutor
 
 import requests_cache
 import lxml.html as html
@@ -72,8 +73,15 @@ def switch_url_host(url, host):
     return urlunparse((parsed_url.scheme, host, parsed_url.path, parsed_url.params, parsed_url.query, parsed_url.fragment))
 
 def fetch_recipe(url):
-    r = session.get(url)
-    tree = html.fromstring(r.text)
+    pages = {}
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        pages["en"] = ex.submit(session.get, url)
+        for lang in LANGUAGES:
+            url = switch_url_host(url, LANGUAGES[lang])
+            pages[lang] = ex.submit(session.get, url)
+
+    tree = html.fromstring(pages["en"].result().text)
     recipe = {
         "name" : { "en": tree.xpath("//h2[contains(@class,'item_name')]/text()")[0] },
         "level" : int(tree.xpath("//div[@class='recipe_level']/span/text()")[0]),
@@ -81,11 +89,11 @@ def fetch_recipe(url):
         "durability" : int(tree.xpath("//dl/dt[text()='Durability']/following-sibling::dd[1]/text()")[0]),
         "maxQuality" : int(tree.xpath("//dl/dt[text()='Maximum Quality']/following-sibling::dd[1]/text()")[0]),
     }
+
     for lang in LANGUAGES:
-        url = switch_url_host(url, LANGUAGES[lang])
-        r = session.get(url)
-        tree = html.fromstring(r.text)
+        tree = html.fromstring(pages[lang].result().text)
         recipe["name"][lang] = tree.xpath("//h2[contains(@class,'item_name')]/text()")[0]
+
     return recipe
 
 def fetch(cls):
