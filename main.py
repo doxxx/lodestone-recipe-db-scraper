@@ -1,14 +1,15 @@
 import json
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import urlunparse
 from concurrent.futures import ThreadPoolExecutor
 
 import requests_cache
 import lxml.html as html
 
 
-BASE_URL = "http://na.finalfantasyxiv.com/lodestone/playguide/db/recipe/"
+RECIPE_LIST_URL = "http://na.finalfantasyxiv.com/lodestone/playguide/db/recipe/"
 
-LANGUAGES = {
+LANG_HOSTS = {
+    "en": "na.finalfantasyxiv.com",
     "ja": "jp.finalfantasyxiv.com",
     "fr": "fr.finalfantasyxiv.com",
     "de": "de.finalfantasyxiv.com",
@@ -31,14 +32,13 @@ NUM_LEVEL_RANGES = len(LEVEL_RANGE)
 session = requests_cache.CachedSession()
 executor = ThreadPoolExecutor(max_workers=4)
 
-def parse_recipe_links_page(base_url, r):
+def parse_recipe_links_page(r):
     tree = html.fromstring(r.text)
     rel_links = tree.xpath("//div/@data-ldst-href")
-    links = [urljoin(base_url, str(rel_link)) for rel_link in rel_links]
+    links = map(str, rel_links)
     show_end = int(tree.xpath("//span[@class='show_end']/text()")[0])
     total = int(tree.xpath("//span[@class='total']/text()")[0])
     return links, show_end, total
-
 
 def fetch_recipe_links_page(cls, level_range, page):
     params = {
@@ -47,7 +47,7 @@ def fetch_recipe_links_page(cls, level_range, page):
         "page": page,
     }
 
-    return parse_recipe_links_page(BASE_URL, session.get(BASE_URL, params=params))
+    return parse_recipe_links_page(session.get(RECIPE_LIST_URL, params=params))
 
 def fetch_recipe_links(cls):
     links = []
@@ -68,27 +68,22 @@ def fetch_recipe_links(cls):
     return links
 
 
-def switch_url_host(url, host):
-    parsed_url = urlparse(url)
-    return urlunparse((parsed_url.scheme, host, parsed_url.path, parsed_url.params, parsed_url.query, parsed_url.fragment))
+def make_recipe_url(lang, rel_link):
+    return urlunparse(("http", LANG_HOSTS[lang], rel_link, "", "", ""))
 
-def fetch_recipe(url):
-    pages = {"en": executor.submit(session.get, url)}
-
-    for lang in LANGUAGES:
-        url = switch_url_host(url, LANGUAGES[lang])
-        pages[lang] = executor.submit(session.get, url)
+def fetch_recipe(rel_link):
+    pages = {lang: executor.submit(session.get, make_recipe_url(lang, rel_link)) for lang in LANG_HOSTS}
 
     tree = html.fromstring(pages["en"].result().text)
     recipe = {
-        "name" : { "en": str(tree.xpath("//h2[contains(@class,'item_name')]/text()")[0]) },
+        "name" : {},
         "level" : int(tree.xpath("//div[@class='recipe_level']/span/text()")[0]),
         "difficulty" : int(tree.xpath("//dl/dt[text()='Difficulty']/following-sibling::dd[1]/text()")[0]),
         "durability" : int(tree.xpath("//dl/dt[text()='Durability']/following-sibling::dd[1]/text()")[0]),
         "maxQuality" : int(tree.xpath("//dl/dt[text()='Maximum Quality']/following-sibling::dd[1]/text()")[0]),
     }
 
-    for lang in LANGUAGES:
+    for lang in LANG_HOSTS:
         tree = html.fromstring(pages[lang].result().text)
         recipe["name"][lang] = str(tree.xpath("//h2[contains(@class,'item_name')]/text()")[0])
 
