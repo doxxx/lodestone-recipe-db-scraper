@@ -1,15 +1,16 @@
 import json
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import requests_cache
 import lxml.html as html
 
 
-BASE_URL = {
-    "en": "http://na.finalfantasyxiv.com/lodestone/playguide/db/recipe/",
-    "ja": "http://jp.finalfantasyxiv.com/lodestone/playguide/db/recipe/",
-    "fr": "http://fr.finalfantasyxiv.com/lodestone/playguide/db/recipe/",
-    "de": "http://de.finalfantasyxiv.com/lodestone/playguide/db/recipe/",
+BASE_URL = "http://na.finalfantasyxiv.com/lodestone/playguide/db/recipe/"
+
+LANGUAGES = {
+    "ja": "jp.finalfantasyxiv.com",
+    "fr": "fr.finalfantasyxiv.com",
+    "de": "de.finalfantasyxiv.com",
 }
 
 CLASSES = [
@@ -39,17 +40,13 @@ def parse_recipe_links_page(base_url, r):
 
 
 def fetch_recipe_links_page(cls, level_range, page):
-    base_url = BASE_URL["en"]
-
     params = {
         "category2": CLASSES.index(cls),
         "category3": level_range,
         "page": page,
     }
 
-    print("Fetching {0} {1} page {2}".format(cls, LEVEL_RANGE[level_range], page))
-
-    return parse_recipe_links_page(base_url, session.get(base_url, params=params))
+    return parse_recipe_links_page(BASE_URL, session.get(BASE_URL, params=params))
 
 def fetch_recipe_links(cls):
     links = []
@@ -57,6 +54,7 @@ def fetch_recipe_links(cls):
     for level_range in range(0, NUM_LEVEL_RANGES):
         page = 1
         while True:
+            print("\rFetching {0} links... {1} page {2}".format(cls, LEVEL_RANGE[level_range], page), end="")
             page_links, show_end, total = fetch_recipe_links_page(cls, level_range, page)
             links += page_links
             if show_end < total:
@@ -64,22 +62,40 @@ def fetch_recipe_links(cls):
             else:
                 break
 
+    print("\rFetching {0} links... done.".format(cls))
+
     return links
 
+
+def switch_url_host(url, host):
+    parsed_url = urlparse(url)
+    return urlunparse((parsed_url.scheme, host, parsed_url.path, parsed_url.params, parsed_url.query, parsed_url.fragment))
+
 def fetch_recipe(url):
-    print("Fetching recipe: {0}".format(url))
     r = session.get(url)
     tree = html.fromstring(r.text)
-    return {
-        "name" : tree.xpath("//h2[contains(@class,'item_name')]/text()")[0],
+    recipe = {
+        "name" : { "en": tree.xpath("//h2[contains(@class,'item_name')]/text()")[0] },
         "level" : int(tree.xpath("//div[@class='recipe_level']/span/text()")[0]),
         "difficulty" : int(tree.xpath("//dl/dt[text()='Difficulty']/following-sibling::dd[1]/text()")[0]),
         "durability" : int(tree.xpath("//dl/dt[text()='Durability']/following-sibling::dd[1]/text()")[0]),
         "maxQuality" : int(tree.xpath("//dl/dt[text()='Maximum Quality']/following-sibling::dd[1]/text()")[0]),
     }
+    for lang in LANGUAGES:
+        url = switch_url_host(url, LANGUAGES[lang])
+        r = session.get(url)
+        tree = html.fromstring(r.text)
+        recipe["name"][lang] = tree.xpath("//h2[contains(@class,'item_name')]/text()")[0]
+    return recipe
 
 def fetch(cls):
-    return [fetch_recipe(link) for link in fetch_recipe_links(cls)]
+    recipes = []
+    links = fetch_recipe_links(cls)
+    for i in range(0, len(links)):
+        print("\rFetching {0} recipe... {1} of {2}".format(cls, i+1, len(links)), end="")
+        recipes.append(fetch_recipe(links[i]))
+    print("\rFetching {0} recipes... done.".format(cls))
+    return recipes
 
 def scrape_to_file(cls):
     recipes = fetch(cls)
