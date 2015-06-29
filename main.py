@@ -29,7 +29,7 @@ LEVEL_RANGE = ["{0}-{1}".format(start, start + 4) for start in range(1, 60, 5)]
 NUM_LEVEL_RANGES = len(LEVEL_RANGE)
 
 session = requests_cache.CachedSession()
-
+executor = ThreadPoolExecutor(max_workers=4)
 
 def parse_recipe_links_page(base_url, r):
     tree = html.fromstring(r.text)
@@ -73,13 +73,11 @@ def switch_url_host(url, host):
     return urlunparse((parsed_url.scheme, host, parsed_url.path, parsed_url.params, parsed_url.query, parsed_url.fragment))
 
 def fetch_recipe(url):
-    pages = {}
+    pages = {"en": executor.submit(session.get, url)}
 
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        pages["en"] = ex.submit(session.get, url)
-        for lang in LANGUAGES:
-            url = switch_url_host(url, LANGUAGES[lang])
-            pages[lang] = ex.submit(session.get, url)
+    for lang in LANGUAGES:
+        url = switch_url_host(url, LANGUAGES[lang])
+        pages[lang] = executor.submit(session.get, url)
 
     tree = html.fromstring(pages["en"].result().text)
     recipe = {
@@ -114,7 +112,7 @@ def scrape_to_file(cls):
 def main():
     for cls in CLASSES:
         scrape_to_file(cls)
-
+    executor.shutdown()
 
 if __name__ == '__main__':
     main()
