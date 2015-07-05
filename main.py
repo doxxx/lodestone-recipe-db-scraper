@@ -26,6 +26,23 @@ CLASSES = [
     "Culinarian",
 ]
 
+# recipe level -> [ 0-star adjustment, 1-star adjustment, ... ]
+LEVEL_DIFF = {
+    # verified against app
+    50: [ 0, 5, 20, 40, 60 ], # 50, 55, 70, 90, 110
+    # unconfirmed from desynthesis results
+    51: [ 69 ], # 120
+    52: [ 73 ], # 125
+    53: [ 77 ], # 130
+    54: [ 79 ], # 133
+    55: [ 81 ], # 136
+    56: [ 83 ], # 139
+    57: [ 85 ], # 142
+    58: [ 87 ], # 145
+    59: [ 89 ], # 148
+    60: [ 90, 100 ], # 150, 160
+}
+
 LEVEL_RANGE = ["{0}-{1}".format(start, start + 4) for start in range(1, 60, 5)]
 NUM_LEVEL_RANGES = len(LEVEL_RANGE)
 
@@ -76,9 +93,17 @@ def fetch_recipe(rel_link):
     pages = {lang: executor.submit(session.get, make_recipe_url(lang, rel_link)) for lang in LANG_HOSTS}
 
     tree = html.fromstring(pages["en"].result().text)
+
+    base_level = int(tree.xpath("//div[@class='recipe_level']/span/text()")[0])
+    level_adjustment = 0
+    if base_level in LEVEL_DIFF:
+        stars = len(tree.xpath("//div[@class='recipe_level']/span[contains(@class, 'star')]"))
+        level_adjustment = LEVEL_DIFF[base_level][stars]
+    level = base_level + level_adjustment
+
     recipe = {
         "name" : {},
-        "level" : int(tree.xpath("//div[@class='recipe_level']/span/text()")[0]),
+        "level" : level,
         "difficulty" : int(tree.xpath("//dl/dt[text()='Difficulty']/following-sibling::dd[1]/text()")[0]),
         "durability" : int(tree.xpath("//dl/dt[text()='Durability']/following-sibling::dd[1]/text()")[0]),
         "maxQuality" : int(tree.xpath("//dl/dt[text()='Maximum Quality']/following-sibling::dd[1]/text()")[0]),
