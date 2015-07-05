@@ -102,7 +102,7 @@ def fetch(cls):
 def scrape_to_file(cls):
     recipes = fetch(cls)
     with open("out/" + cls + ".json", "wt") as db_file:
-        json.dump(recipes, db_file, indent="  ")
+        json.dump(recipes, db_file, indent=2, sort_keys=True)
     print("Wrote {0} recipes for {1}".format(len(recipes), cls))
 
 def main():
