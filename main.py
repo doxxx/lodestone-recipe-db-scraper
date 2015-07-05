@@ -97,6 +97,7 @@ def fetch(cls):
         print("\rFetching {0} recipe... {1} of {2}".format(cls, i+1, len(links)), end="")
         recipes.append(fetch_recipe(links[i]))
     print("\rFetching {0} recipes... done.".format(cls))
+    recipes.sort(key=lambda r: (r['level'], r['name']['en']))
     return recipes
 
 def scrape_to_file(cls):
