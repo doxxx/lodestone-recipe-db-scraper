@@ -101,10 +101,18 @@ def fetch_recipe(rel_link):
         level_adjustment = LEVEL_DIFF[base_level][stars]
     level = base_level + level_adjustment
 
+    # Base level 51 recipes of difficulty 169 or 339 are adjusted to level 115
+    # instead of the default 120 that other level 51 recipes are adjusted to.
+
+    difficulty = int(tree.xpath("//dl/dt[text()='Difficulty']/following-sibling::dd[1]/text()")[0])
+
+    if base_level == 51 and (difficulty == 169 or difficulty == 339):
+        level -= 5
+
     recipe = {
         "name" : {},
         "level" : level,
-        "difficulty" : int(tree.xpath("//dl/dt[text()='Difficulty']/following-sibling::dd[1]/text()")[0]),
+        "difficulty" : difficulty,
         "durability" : int(tree.xpath("//dl/dt[text()='Durability']/following-sibling::dd[1]/text()")[0]),
         "maxQuality" : int(tree.xpath("//dl/dt[text()='Maximum Quality']/following-sibling::dd[1]/text()")[0]),
     }
