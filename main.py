@@ -111,6 +111,7 @@ def fetch_recipe(rel_link):
 
     recipe = {
         "name" : {},
+        "baseLevel" : base_level,
         "level" : level,
         "difficulty" : difficulty,
         "durability" : int(tree.xpath("//dl/dt[text()='Durability']/following-sibling::dd[1]/text()")[0]),
