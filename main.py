@@ -1,6 +1,7 @@
 import json
 from urllib.parse import urlunparse
 from concurrent.futures import ThreadPoolExecutor
+import re
 
 import requests_cache
 import lxml.html as html
@@ -45,6 +46,8 @@ LEVEL_DIFF = {
 
 LEVEL_RANGE = ["{0}-{1}".format(start, start + 4) for start in range(1, 60, 5)]
 NUM_LEVEL_RANGES = len(LEVEL_RANGE)
+
+ASPECT_RE = re.compile("Aspect: (.+)")
 
 session = requests_cache.CachedSession()
 executor = ThreadPoolExecutor(max_workers=4)
@@ -110,6 +113,14 @@ def fetch_recipe(rel_link):
     if base_level == 51 and (difficulty == 169 or difficulty == 339):
         level -= 5
 
+    aspect = None
+
+    for characteristic in tree.xpath("//dl/dt[text()='Characteristics']/following-sibling::dd[1]/text()"):
+        characteristic = characteristic.strip()
+        match = ASPECT_RE.match(characteristic)
+        if not match is None:
+            aspect = match.group(1)
+
     recipe = {
         "name" : {},
         "baseLevel" : base_level,
@@ -121,6 +132,9 @@ def fetch_recipe(rel_link):
 
     if stars:
         recipe["stars"] = stars
+
+    if aspect:
+        recipe["aspect"] = aspect
 
     for lang in LANG_HOSTS:
         tree = html.fromstring(pages[lang].result().text)
