@@ -95,6 +95,7 @@ def fetch_recipe(rel_link):
     tree = html.fromstring(pages["en"].result().text)
 
     base_level = int(tree.xpath("//div[@class='recipe_level']/span/text()")[0])
+    stars = None
     level_adjustment = 0
     if base_level in LEVEL_DIFF:
         stars = len(tree.xpath("//div[@class='recipe_level']/span[contains(@class, 'star')]"))
@@ -117,6 +118,9 @@ def fetch_recipe(rel_link):
         "durability" : int(tree.xpath("//dl/dt[text()='Durability']/following-sibling::dd[1]/text()")[0]),
         "maxQuality" : int(tree.xpath("//dl/dt[text()='Maximum Quality']/following-sibling::dd[1]/text()")[0]),
     }
+
+    if stars:
+        recipe["stars"] = stars
 
     for lang in LANG_HOSTS:
         tree = html.fromstring(pages[lang].result().text)
