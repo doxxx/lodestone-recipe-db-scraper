@@ -49,7 +49,7 @@ NUM_LEVEL_RANGES = len(LEVEL_RANGE)
 
 ASPECT_RE = re.compile("Aspect: (.+)")
 
-session = requests_cache.CachedSession()
+session = requests_cache.CachedSession(expire_after=3600)
 executor = ThreadPoolExecutor(max_workers=4)
 
 
