@@ -97,25 +97,30 @@ def fetch_recipe(rel_link):
 
     tree = html.fromstring(pages["en"].result().text)
 
-    base_level = int(tree.xpath("//div[@class='recipe_level']/span/text()")[0])
+    detail_box = tree.xpath("//div[@class='recipe_detail item_detail_box']")[0]
+    base_level = int(detail_box.xpath("//span[@class='db-view__item__text__level__num']/text()")[0])
     stars = None
     level_adjustment = 0
     if base_level in LEVEL_DIFF:
-        stars = len(tree.xpath("//div[@class='recipe_level']/span[contains(@class, 'star')]"))
+        stars = len(detail_box.xpath("//div[@class='db-view__item__text__level']//span[contains(@class, 'star')]"))
         level_adjustment = LEVEL_DIFF[base_level][stars]
     level = base_level + level_adjustment
 
+    craft_data = tree.xpath("//ul[@class='db-view__recipe__craftdata']")[0]
+    difficulty = int(craft_data.xpath("li[span='Difficulty']/text()")[0])
+    durability = int(craft_data.xpath("li[span='Durability']/text()")[0])
+    maxQuality = int(craft_data.xpath("li[span='Maximum Quality']/text()")[0])
+
     # Base level 51 recipes of difficulty 169 or 339 are adjusted to level 115
     # instead of the default 120 that other level 51 recipes are adjusted to.
-
-    difficulty = int(tree.xpath("//dl/dt[text()='Difficulty']/following-sibling::dd[1]/text()")[0])
 
     if base_level == 51 and (difficulty == 169 or difficulty == 339):
         level -= 5
 
     aspect = None
 
-    for characteristic in tree.xpath("//dl/dt[text()='Characteristics']/following-sibling::dd[1]/text()"):
+    craft_conditions = tree.xpath("//dl[@class='db-view__recipe__crafting_conditions']")[0]
+    for characteristic in craft_conditions.xpath("dt[text()='Characteristics']/../dd/text()"):
         characteristic = characteristic.strip()
         match = ASPECT_RE.match(characteristic)
         if not match is None:
@@ -126,8 +131,8 @@ def fetch_recipe(rel_link):
         "baseLevel" : base_level,
         "level" : level,
         "difficulty" : difficulty,
-        "durability" : int(tree.xpath("//dl/dt[text()='Durability']/following-sibling::dd[1]/text()")[0]),
-        "maxQuality" : int(tree.xpath("//dl/dt[text()='Maximum Quality']/following-sibling::dd[1]/text()")[0]),
+        "durability" : durability,
+        "maxQuality" : maxQuality,
     }
 
     if stars:
@@ -138,7 +143,7 @@ def fetch_recipe(rel_link):
 
     for lang in LANG_HOSTS:
         tree = html.fromstring(pages[lang].result().text)
-        recipe["name"][lang] = str(tree.xpath("//h2[contains(@class,'item_name')]/text()")[0])
+        recipe["name"][lang] = str(tree.xpath("//h2[contains(@class,'db-view__item__text__name')]/text()")[0]).strip()
 
     return recipe
 
