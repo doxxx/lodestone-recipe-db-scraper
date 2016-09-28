@@ -164,8 +164,11 @@ def scrape_to_file(cls):
     print("Wrote {0} recipes for {1}".format(len(recipes), cls))
 
 def main():
-    for cls in CLASSES:
-        scrape_to_file(cls)
+    try:
+        for cls in CLASSES:
+            scrape_to_file(cls)
+    except AttributeError:
+        print("ERROR: cache.sqlite is incompatible, please delete it.")
     executor.shutdown()
 
 
