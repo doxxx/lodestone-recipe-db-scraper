@@ -4,11 +4,23 @@ This project provides a tool which scrapes recipe information from the Lodestone
 
 # Pre-requisites
 
-This project uses Python 3.4 and describes its dependencies in a pip `requirements.txt` file. You can install all the packages required by running:
+This project uses Python 3.4 (or newer) and describes its dependencies in a pip `requirements.txt` file. You can install all the packages required by running:
 
     pip install -r requirements.txt
 
-If you are using Windows, you will need to ensure that you have Visual Studio 2010 installed (the [Express edition](http://go.microsoft.com/?linkid=9709949) will suffice), and run the `pip` command inside a "Visual Studio Command Prompt". Please see the [lxml installation instructions](http://lxml.de/installation.html) for further information.
+If you are using Windows, you can first download the lxml extension (e.g. `lxml‑3.6.4‑cp35‑cp35m‑win_amd64.whl` for CPython 3.5 64-bit) from [here](http://www.lfd.uci.edu/~gohlke/pythonlibs/#lxml) and manually install using:
+
+    pip install C:\path\to\downloaded\package.whl
+
+And then install the remainder of the dependencies using the first `pip install` command.
+
+If you would rather have pip compile the package, you will need to ensure that you have the correct version of Visual Studio installed (the Express edition will suffice), and run the first `pip install` command inside a "Visual Studio Command Prompt". Please see the [lxml installation instructions](http://lxml.de/installation.html) for further information.
+
+Another alternative for Windows 10 is to use the _Windows Subsystem for Linux_. Once installed, in a Bash window you can use:
+
+    sudo apt install python3 python3-lxml python3-requests python3-requests-cache python3-requests-futures
+
+to install Python and all the dependencies, and then run Python as described below.
 
 # Usage
 
