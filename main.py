@@ -1,11 +1,17 @@
+import sys
+import signal
+import argparse
 import json
-from urllib.parse import urlunparse
-from concurrent.futures import ThreadPoolExecutor
 import re
+from urllib.parse import urlunparse
 
-import requests_cache
 import lxml.html as html
+import asyncio
+import aiohttp
+import tqdm
 
+# Restore default Ctrl-C handler for faster process shutdown
+signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 RECIPE_LIST_URL = "http://na.finalfantasyxiv.com/lodestone/playguide/db/recipe/"
 
@@ -49,42 +55,56 @@ NUM_LEVEL_RANGES = len(LEVEL_RANGE)
 
 ASPECT_RE = re.compile("Aspect: (.+)")
 
-session = requests_cache.CachedSession(expire_after=3600)
-executor = ThreadPoolExecutor(max_workers=4)
+FETCH_SEMAPHORE: asyncio.Semaphore
 
+async def wait_with_progress(coros, desc=None, unit=None):
+    for f in tqdm.tqdm(asyncio.as_completed(coros), total=len(coros), desc=desc, unit=unit):
+        yield await f
 
-def parse_recipe_links_page(r):
-    tree = html.fromstring(r.text)
+def parse_recipe_links_page(text):
+    tree = html.fromstring(text)
     rel_links = tree.xpath("//div/@data-ldst-href")
     links = map(str, rel_links)
     show_end = int(tree.xpath("//span[@class='show_end']/text()")[0])
     total = int(tree.xpath("//span[@class='total']/text()")[0])
     return links, show_end, total
 
-def fetch_recipe_links_page(cls, level_range, page):
+async def fetch_recipe_links_page(session, cls, level_range, page):
     params = {
         "category2": CLASSES.index(cls),
         "category3": level_range,
         "page": page,
     }
 
-    return parse_recipe_links_page(session.get(RECIPE_LIST_URL, params=params))
+    async with FETCH_SEMAPHORE:
+        async with session.get(RECIPE_LIST_URL, params=params) as res:
+            return parse_recipe_links_page(await res.text())
 
-def fetch_recipe_links(cls):
+async def fetch_recipe_links_range(session, cls, level_range):
     links = []
+    page = 1
+    while True:
+        page_links, show_end, total = await fetch_recipe_links_page(session, cls, level_range, page)
+        links += page_links
+        if show_end < total:
+            page += 1
+        else:
+            break
+    return links
 
-    for level_range in range(0, NUM_LEVEL_RANGES):
-        page = 1
-        while True:
-            print("\rFetching {0} links... {1} page {2}".format(cls, LEVEL_RANGE[level_range], page), end="")
-            page_links, show_end, total = fetch_recipe_links_page(cls, level_range, page)
-            links += page_links
-            if show_end < total:
-                page += 1
-            else:
-                break
+async def fetch_recipe_links(session, cls):
+    results = wait_with_progress(
+        [
+            fetch_recipe_links_range(session, cls, level_range)
+            for level_range in range(0, NUM_LEVEL_RANGES)]
+        ,
+        desc=f"Fetching {cls} links",
+        unit=""
+    )
 
-    print("\rFetching {0} links... done.".format(cls))
+    links = []
+    async for r in results:
+        links.extend(r)
 
     return links
 
@@ -92,10 +112,31 @@ def fetch_recipe_links(cls):
 def make_recipe_url(lang, rel_link):
     return urlunparse(("http", LANG_HOSTS[lang], rel_link, "", "", ""))
 
-def fetch_recipe(rel_link):
-    pages = {lang: executor.submit(session.get, make_recipe_url(lang, rel_link)) for lang in LANG_HOSTS}
+async def fetch_recipe_page(session, lang, rel_link):
+    while True:
+        try:
+            async with FETCH_SEMAPHORE:
+                async with session.get(make_recipe_url(lang, rel_link)) as res:
+                    tree = html.fromstring(await res.text())
+                    break
+        except:
+            print("ERROR: Could not parse page -- retrying after delay", file=sys.stderr)
+            pass
+    return tree
 
-    tree = html.fromstring(pages["en"].result().text)
+async def fetch_recipe_pages(session, rel_link):
+    pages = {}
+
+    for lang in LANG_HOSTS:
+        pages[lang] = await fetch_recipe_page(session, lang, rel_link)
+
+    return pages
+
+
+async def fetch_recipe(session, rel_link):
+    pages = await fetch_recipe_pages(session, rel_link)
+
+    tree = pages["en"]
 
     detail_box = tree.xpath("//div[@class='recipe_detail item_detail_box']")[0]
     base_level = int(detail_box.xpath("//span[@class='db-view__item__text__level__num']/text()")[0])
@@ -142,35 +183,60 @@ def fetch_recipe(rel_link):
         recipe["aspect"] = aspect
 
     for lang in LANG_HOSTS:
-        tree = html.fromstring(pages[lang].result().text)
+        tree = pages[lang]
         recipe["name"][lang] = str(tree.xpath("//h2[contains(@class,'db-view__item__text__name')]/text()")[0]).strip()
 
     return recipe
 
-def fetch(cls):
-    recipes = []
-    links = fetch_recipe_links(cls)
-    for i in range(0, len(links)):
-        print("\rFetching {0} recipe... {1} of {2}".format(cls, i+1, len(links)), end="")
-        recipes.append(fetch_recipe(links[i]))
-    print("\rFetching {0} recipes... done.".format(cls))
+async def fetch_recipes(session, cls, links):
+    recipes = wait_with_progress(
+        [fetch_recipe(session, link) for link in links],
+        desc=f"Fetching {cls} recipes",
+        unit=""
+    )
+
+    return [r async for r in recipes]
+
+
+async def fetch_class(session, cls):
+    links = await fetch_recipe_links(session, cls)
+    recipes = await fetch_recipes(session, cls, links)
     recipes.sort(key=lambda r: (r['level'], r['name']['en']))
     return recipes
 
-def scrape_to_file(cls):
-    recipes = fetch(cls)
-    with open("out/" + cls + ".json", "wt") as db_file:
-        json.dump(recipes, db_file, indent=2, sort_keys=True)
-    print("Wrote {0} recipes for {1}".format(len(recipes), cls))
+async def scrape_to_file(session, cls):
+    recipes = await fetch_class(session, cls)
+    with open("out/" + cls + ".json", mode="wt", encoding="utf-8") as db_file:
+        json.dump(recipes, db_file, indent=2, sort_keys=True, ensure_ascii=False)
+
+async def scrape_classes(session):
+    for cls in CLASSES:
+        await scrape_to_file(session, cls)
 
 def main():
-    try:
-        for cls in CLASSES:
-            scrape_to_file(cls)
-    except AttributeError:
-        print("ERROR: cache.sqlite is incompatible, please delete it.")
-    executor.shutdown()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-c",
+        "--concurrency",
+        help="Max number of concurrent requests to Lodestone servers. [Default: 8]",
+        default=8,
+        metavar="N"
+    )
+    args = parser.parse_args()
 
+    loop = asyncio.get_event_loop()
+
+    global FETCH_SEMAPHORE
+    FETCH_SEMAPHORE = asyncio.Semaphore(int(args.concurrency), loop=loop)
+    session = aiohttp.ClientSession(loop=loop)
+
+    try:
+        loop.run_until_complete(scrape_classes(session))
+    except KeyboardInterrupt:
+        pass
+    finally:
+        session.close()
+        loop.close()
 
 if __name__ == '__main__':
     main()
