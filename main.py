@@ -205,7 +205,8 @@ async def fetch_class(session, additional_languages, cls):
     for r in recipes:
         for lang in additional_languages.keys():
             names = additional_languages[lang]
-            r['name'][lang] = names[r['name']['en']]
+            english_name = r['name']['en']
+            r['name'][lang] = names[english_name] or english_name
     return recipes
 
 async def scrape_to_file(session, additional_languages, cls):
