@@ -48,9 +48,19 @@ LEVEL_DIFF = {
     58: [ 87 ], # 145
     59: [ 89 ], # 148
     60: [ 90, 100, 110, 120, 130 ], # 150, 160, 170, 180, 190
+    61: [ 199 ], # 260
+    62: [ 203 ], # 265
+    63: [ 207 ], # 270
+    64: [ 209 ], # 273
+    65: [ 211 ], # 276
+    66: [ 213 ], # 279
+    67: [ 215 ], # 282
+    68: [ 217 ], # 285
+    69: [ 219 ], # 288
+    70: [ 220, 230, 240 ], # 290
 }
 
-LEVEL_RANGE = ["{0}-{1}".format(start, start + 4) for start in range(1, 60, 5)]
+LEVEL_RANGE = ["{0}-{1}".format(start, start + 4) for start in range(1, 70, 5)]
 NUM_LEVEL_RANGES = len(LEVEL_RANGE)
 
 ASPECT_RE = re.compile("Aspect: (.+)")
@@ -155,7 +165,7 @@ async def fetch_recipe(session, rel_link):
     # Base level 51 recipes of difficulty 169 or 339 are adjusted to level 115
     # instead of the default 120 that other level 51 recipes are adjusted to.
 
-    if base_level == 51 and (difficulty == 169 or difficulty == 339):
+    if (base_level == 51 and (difficulty == 169 or difficulty == 339)) or (base_level == 61 and (difficulty == 1116 or difficulty == 558)):
         level -= 5
 
     aspect = None
