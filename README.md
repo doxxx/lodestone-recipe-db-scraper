@@ -18,14 +18,16 @@ If you would rather have pip compile the package, you will need to ensure that y
 
 Another alternative for Windows 10 is to use the _Windows Subsystem for Linux_. Once installed, in a Bash window you can use:
 
-    sudo apt install python3 python3-lxml python3-requests python3-requests-cache python3-requests-futures
+    sudo apt install python3 && sudo pip install -r requirements.txt
 
 to install Python and all the dependencies, and then run Python as described below.
 
 # Usage
 
-Simply run `main.py`:
+Run `main.py` with the following arguments:
 
-    python main.py
+    python main.py -l cn=items_cn.json
     
-It will output its progress to stdout and generate `json` files in the `out` subdirectory. The Lodestone web pages are cached in a local sqlite database, so subsequent runs will go much faster. The database will get quite large, ~1.6GB at my last run. To force it to redownload the web pages, simply delete the `cache.sqlite` file.
+It will output its progress to stdout and generate `json` files in the `out` subdirectory.
+
+The `-l` option includes names in languages not supported by the Lodestone, e.g. Chinese. The option must be provided as `LANG=FILE`, where `LANG` is the two-letter code identifying the language and `FILE` is the path to the file containing the translations. The file must contain a JSON object with the English recipe names as the keys and the translated names as the values. You can specify the `-l` option multiple times to add multiple languages.

@@ -198,20 +198,24 @@ async def fetch_recipes(session, cls, links):
     return [r async for r in recipes]
 
 
-async def fetch_class(session, cls):
+async def fetch_class(session, additional_languages, cls):
     links = await fetch_recipe_links(session, cls)
     recipes = await fetch_recipes(session, cls, links)
     recipes.sort(key=lambda r: (r['level'], r['name']['en']))
+    for r in recipes:
+        for lang in additional_languages.keys():
+            names = additional_languages[lang]
+            r['name'][lang] = names[r['name']['en']]
     return recipes
 
-async def scrape_to_file(session, cls):
-    recipes = await fetch_class(session, cls)
+async def scrape_to_file(session, additional_languages, cls):
+    recipes = await fetch_class(session, additional_languages, cls)
     with open("out/" + cls + ".json", mode="wt", encoding="utf-8") as db_file:
         json.dump(recipes, db_file, indent=2, sort_keys=True, ensure_ascii=False)
 
-async def scrape_classes(session):
+async def scrape_classes(session, additional_languages):
     for cls in CLASSES:
-        await scrape_to_file(session, cls)
+        await scrape_to_file(session, additional_languages, cls)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -222,7 +226,22 @@ def main():
         default=8,
         metavar="N"
     )
+    parser.add_argument(
+        "-l",
+        "--lang-file",
+        help="Language code and path to file that defines mappings from English recipe names to another language.",
+        metavar="LANG=FILE",
+        action="append"
+    )
     args = parser.parse_args()
+
+    # Load additional language files
+    additional_languages = {}
+    for f in args.lang_file:
+        lang, path = f.split("=", 2)
+        with open(path, mode="rt", encoding="utf-8") as fp:
+            print(f"Loading additional langage '{lang}' from: {path}")
+            additional_languages[lang] = json.load(fp)
 
     loop = asyncio.get_event_loop()
 
@@ -231,7 +250,7 @@ def main():
     session = aiohttp.ClientSession(loop=loop)
 
     try:
-        loop.run_until_complete(scrape_classes(session))
+        loop.run_until_complete(scrape_classes(session, additional_languages))
     except KeyboardInterrupt:
         pass
     finally:
