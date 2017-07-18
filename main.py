@@ -248,11 +248,12 @@ def main():
 
     # Load additional language files
     additional_languages = {}
-    for f in args.lang_file:
-        lang, path = f.split("=", 2)
-        with open(path, mode="rt", encoding="utf-8") as fp:
-            print(f"Loading additional langage '{lang}' from: {path}")
-            additional_languages[lang] = json.load(fp)
+    if args.lang_file:
+        for f in args.lang_file:
+            lang, path = f.split("=", 2)
+            with open(path, mode="rt", encoding="utf-8") as fp:
+                print(f"Loading additional language '{lang}' from: {path}")
+                additional_languages[lang] = json.load(fp)
 
     loop = asyncio.get_event_loop()
 
