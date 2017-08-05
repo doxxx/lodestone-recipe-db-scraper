@@ -79,13 +79,13 @@ async def fetch_item(session, url):
     data = await fetch_page(session, url)
     
     food = {
-        "name": data["name_en"],
+        "name": { "en": data["name_en"], "fr": data["name_fr"], "de": data["name_de"], "ja": data["name_ja"] },
         "hq": False,
         "ilvl": data["level_item"]
     }
 
     food_hq = {
-        "name": data["name_en"],
+        "name": { "en": data["name_en"], "fr": data["name_fr"], "de": data["name_de"], "ja": data["name_ja"] },
         "hq": True,
         "ilvl": data["level_item"]
     }
@@ -125,7 +125,7 @@ async def fetch_items(session, category, urls):
 async def fetch_all_items(session, category):
     results = wait_with_progress(
         [ fetch_item_urls(session, category) ],
-        desc=f"Fetching %s ids" % category,
+        desc=f"Fetching %s URLs" % category,
         unit=""
     )
 
@@ -134,7 +134,7 @@ async def fetch_all_items(session, category):
         urls.extend(r)
 
     food = await fetch_items(session, category, urls)
-    food.sort(key=lambda r: (r['ilvl'], r['name'], r['hq']), reverse=True)
+    food.sort(key=lambda r: (r['ilvl'], r['name']['en'], r['hq']), reverse=True)
     return food
 
 async def scrape_items(session):
