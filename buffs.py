@@ -11,38 +11,51 @@ import tqdm
 # Restore default Ctrl-C handler for faster process shutdown
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-ITEM_LIST_URL = "http://api.xivdb.com/search" #?attributes=71%7Cgt%7C1%7C0%2C70%7Cgt%7C1%7C0%2C11%7Cgt%7C1%7C0&item_ui_category%7Cet=46&attributes_andor=or&one=items"
+ITEM_LIST_URL = "http://api.xivdb.com/search"
+
+CATEGORIES = {
+    "Food": 46,
+    "Medicine": 44
+}
 
 FETCH_SEMAPHORE: asyncio.Semaphore
-
-def parse_food_links_page(text):
-    data = json.loads(text)
-    urls = map(lambda x: x['url_api'], data['items']['results'])
-    pages = data['items']['paging']['total']
-    return urls, pages
 
 async def wait_with_progress(coros, desc=None, unit=None):
     for f in tqdm.tqdm(asyncio.as_completed(coros), total=len(coros), desc=desc, unit=unit):
         yield await f
 
-async def fetch_food_links_page(session, page):
+def parse_item_links_page(text):
+    data = json.loads(text)
+    urls = map(lambda x: x['url_api'], data['items']['results'])
+    pages = data['items']['paging']['total']
+    return urls, pages
+
+async def fetch_item_links_page(session, category, page):
     params = {
         "attributes": "71|gt|1|0,70|gt|1|0,11|gt|1|0",
-        "item_ui_category|et": "46",
+        "item_ui_category|et": CATEGORIES[category],
         "attributes_andor": "or",
         "one": "items",
         "page": page
-    }
+    }                                       
 
-    async with FETCH_SEMAPHORE:
-        async with session.get(ITEM_LIST_URL, params=params) as res:
-            return parse_food_links_page(await res.text())
+    while True:
+        try:
+            async with FETCH_SEMAPHORE:
+                async with session.get(ITEM_LIST_URL, params=params) as res:
+                    data = parse_item_links_page(await res.text())
+                    break
+        except:
+            #print("ERROR: Could not parse page -- retrying after delay", file=sys.stderr)
+            pass
 
-async def fetch_food_urls(session):
+    return data
+
+async def fetch_item_urls(session, category):
     urls = []
     page = 1
     while True:
-        page_urls, total = await fetch_food_links_page(session, page)
+        page_urls, total = await fetch_item_links_page(session, category, page)
         urls += page_urls
         if page < total:
             page += 1
@@ -50,7 +63,7 @@ async def fetch_food_urls(session):
             break
     return urls
 
-async def fetch_food_page(session, url):
+async def fetch_page(session, url):
     while True:
         try:
             async with FETCH_SEMAPHORE:
@@ -62,8 +75,8 @@ async def fetch_food_page(session, url):
             pass
     return data
 
-async def fetch_food_item(session, url):
-    data = await fetch_food_page(session, url)
+async def fetch_item(session, url):
+    data = await fetch_page(session, url)
     
     food = {
         "name": data["name_en"],
@@ -96,10 +109,10 @@ async def fetch_food_item(session, url):
 
     return [food, food_hq]
 
-async def fetch_food_items(session, urls):
+async def fetch_items(session, category, urls):
     results = wait_with_progress(
-        [fetch_food_item(session, url) for url in urls],
-        desc=f"Fetching food",
+        [fetch_item(session, url) for url in urls],
+        desc=f"Fetching %s" % category,
         unit=""
     )
 
@@ -109,10 +122,10 @@ async def fetch_food_items(session, urls):
 
     return food
 
-async def fetch_all_food(session):
+async def fetch_all_items(session, category):
     results = wait_with_progress(
-        [ fetch_food_urls(session) ],
-        desc=f"Fetching food ids",
+        [ fetch_item_urls(session, category) ],
+        desc=f"Fetching %s ids" % category,
         unit=""
     )
 
@@ -120,14 +133,15 @@ async def fetch_all_food(session):
     async for r in results:
         urls.extend(r)
 
-    food = await fetch_food_items(session, urls)
+    food = await fetch_items(session, category, urls)
     food.sort(key=lambda r: (r['ilvl'], r['name'], r['hq']), reverse=True)
     return food
 
-async def scrape_food(session):
-    recipes = await fetch_all_food(session)
-    with open("out/Food.json", mode="wt", encoding="utf-8") as db_file:
-        json.dump(recipes, db_file, indent=2, sort_keys=True, ensure_ascii=False)
+async def scrape_items(session):
+    for category in CATEGORIES.keys():
+        recipes = await fetch_all_items(session, category)
+        with open("out/%s.json" % category, mode="wt", encoding="utf-8") as db_file:
+            json.dump(recipes, db_file, indent=2, sort_keys=True, ensure_ascii=False)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -147,7 +161,7 @@ def main():
     session = aiohttp.ClientSession(loop=loop)
 
     try:
-        loop.run_until_complete(scrape_food(session))
+        loop.run_until_complete(scrape_items(session))
     except KeyboardInterrupt:
         pass
     finally:
