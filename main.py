@@ -167,6 +167,8 @@ async def fetch_recipe(session, rel_link):
 
     if (base_level == 51 and (difficulty == 169 or difficulty == 339)) or (base_level == 61 and (difficulty == 1116 or difficulty == 558)):
         level -= 5
+    if (base_level == 60 and stars == 3 and difficulty == 1764):
+        level += 10
 
     aspect = None
 
