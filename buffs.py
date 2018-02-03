@@ -37,7 +37,7 @@ async def fetch_item_links_page(session, category, page):
         "attributes_andor": "or",
         "one": "items",
         "page": page
-    }                                       
+    }
 
     while True:
         try:
@@ -77,7 +77,7 @@ async def fetch_page(session, url):
 
 async def fetch_item(session, url):
     data = await fetch_page(session, url)
-    
+
     food = {
         "name": { "en": data["name_en"], "fr": data["name_fr"], "de": data["name_de"], "ja": data["name_ja"] },
         "hq": False,
@@ -122,7 +122,7 @@ async def fetch_items(session, category, urls):
 
     return food
 
-async def fetch_all_items(session, category):
+async def fetch_all_items(session, category, additional_languages):
     results = wait_with_progress(
         [ fetch_item_urls(session, category) ],
         desc=f"Fetching %s URLs" % category,
@@ -135,11 +135,16 @@ async def fetch_all_items(session, category):
 
     food = await fetch_items(session, category, urls)
     food.sort(key=lambda r: (r['ilvl'], r['name']['en'], r['hq']), reverse=True)
+    for f in food:
+        for lang in additional_languages.keys():
+            names = additional_languages[lang]
+            english_name = f['name']['en']
+            f['name'][lang] = names.get(english_name) or english_name
     return food
 
-async def scrape_items(session):
+async def scrape_items(session, additional_languages):
     for category in CATEGORIES.keys():
-        recipes = await fetch_all_items(session, category)
+        recipes = await fetch_all_items(session, category, additional_languages)
         with open("out/%s.json" % category, mode="wt", encoding="utf-8") as db_file:
             json.dump(recipes, db_file, indent=2, sort_keys=True, ensure_ascii=False)
 
@@ -152,7 +157,23 @@ def main():
         default=4,
         metavar="N"
     )
+    parser.add_argument(
+        "-l",
+        "--lang-file",
+        help="Language code and path to file that defines mappings from English recipe names to another language.",
+        metavar="LANG=FILE",
+        action="append"
+    )
     args = parser.parse_args()
+
+    # Load additional language files
+    additional_languages = {}
+    if args.lang_file:
+        for f in args.lang_file:
+            lang, path = f.split("=", 2)
+            with open(path, mode="rt", encoding="utf-8") as fp:
+                print(f"Loading additional language '{lang}' from: {path}")
+                additional_languages[lang] = json.load(fp)
 
     loop = asyncio.get_event_loop()
 
@@ -161,7 +182,7 @@ def main():
     session = aiohttp.ClientSession(loop=loop)
 
     try:
-        loop.run_until_complete(scrape_items(session))
+        loop.run_until_complete(scrape_items(session, additional_languages))
     except KeyboardInterrupt:
         pass
     finally:
