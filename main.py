@@ -47,7 +47,7 @@ LEVEL_DIFF = {
     57: [ 85 ], # 142
     58: [ 87 ], # 145
     59: [ 89 ], # 148
-    60: [ 90, 100, 110, 120, 130 ], # 150, 160, 170, 180, 190
+    60: [ 90, 100, 120, 150, 190 ], # 150, 160, 180, 210, 250
     61: [ 199 ], # 260
     62: [ 203 ], # 265
     63: [ 207 ], # 270
@@ -57,7 +57,7 @@ LEVEL_DIFF = {
     67: [ 215 ], # 282
     68: [ 217 ], # 285
     69: [ 219 ], # 288
-    70: [ 220, 230, 250 ], # 290
+    70: [ 220, 230, 250, 280 ], # 290, 300, 320, 350
 }
 
 LEVEL_RANGE = ["{0}-{1}".format(start, start + 4) for start in range(1, 70, 5)]
@@ -167,6 +167,8 @@ async def fetch_recipe(session, rel_link):
 
     if (base_level == 51 and (difficulty == 169 or difficulty == 339)) or (base_level == 61 and (difficulty == 1116 or difficulty == 558)):
         level -= 5
+    if (base_level == 60 and stars == 3 and difficulty == 1764):
+        level += 10
 
     aspect = None
 
