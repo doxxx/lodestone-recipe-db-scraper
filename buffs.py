@@ -6,6 +6,7 @@ from urllib.parse import urlunparse
 
 import asyncio
 import aiohttp
+import itertools
 import tqdm
 
 # Restore default Ctrl-C handler for faster process shutdown
@@ -116,11 +117,14 @@ async def fetch_items(session, category, urls):
         unit=""
     )
 
-    food = []
+    items = []
     async for r in results:
-        food.extend(r)
+        items.extend(r)
 
-    return food
+    # Remove Potion because XIVDB's data is bad
+    items = list(itertools.filterfalse(lambda item: item["name"]["en"] == 'Potion', items))
+
+    return items
 
 async def fetch_all_items(session, category, additional_languages):
     results = wait_with_progress(
