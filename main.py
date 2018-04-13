@@ -63,6 +63,8 @@ LEVEL_DIFF = {
 LEVEL_RANGE = ["{0}-{1}".format(start, start + 4) for start in range(1, 70, 5)]
 NUM_LEVEL_RANGES = len(LEVEL_RANGE)
 
+EMBED_CODE_RE = re.compile("\\[db:recipe=([0-9a-f]+)]")
+
 ASPECT_RE = re.compile("Aspect: (.+)")
 
 FETCH_SEMAPHORE: asyncio.Semaphore
@@ -148,6 +150,12 @@ async def fetch_recipe(session, rel_link):
 
     tree = pages["en"]
 
+    embed_code = tree.xpath("//div[@class='embed_code_txt']//div[contains(text(), 'db:recipe')]/text()")[0]
+    match = EMBED_CODE_RE.match(embed_code)
+    if match is None:
+        raise Exception("recipe id not found")
+    recipe_id = match.group(1)
+
     detail_box = tree.xpath("//div[@class='recipe_detail item_detail_box']")[0]
     base_level = int(detail_box.xpath("//span[@class='db-view__item__text__level__num']/text()")[0])
     stars = None
@@ -180,6 +188,7 @@ async def fetch_recipe(session, rel_link):
             aspect = match.group(1)
 
     recipe = {
+        "id": recipe_id,
         "name" : {},
         "baseLevel" : base_level,
         "level" : level,
