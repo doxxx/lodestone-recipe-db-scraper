@@ -2,6 +2,7 @@ import signal
 import argparse
 import json
 import re
+import sys
 from urllib.parse import urlunparse
 
 import lxml.html as html
@@ -69,6 +70,14 @@ ASPECT_RE = re.compile("Aspect: (.+)")
 FETCH_SEMAPHORE: asyncio.Semaphore
 
 
+def logInfo(msg):
+    print(msg, end="\n", file=sys.stderr)
+
+
+def logError(msg):
+    print(f"\nERROR: {msg}", end="\n", file=sys.stderr)
+
+
 async def wait_with_progress(coros: list, desc: str = None, unit: str = None):
     for f in tqdm.tqdm(asyncio.as_completed(coros), total=len(coros), desc=desc, unit=unit):
         yield await f
@@ -87,11 +96,14 @@ async def fetch(session: aiohttp.ClientSession, url: str, **kwargs):
                     elif res.status != 200:
                         raise Exception(f"{res.status} {res.reason}")
                     return await res.text()
+        except SystemExit:
+            raise
         except:
             err_count += 1
             asyncio.sleep(5)
             pass
-    raise Exception(f"Could not load page after 5 tries: {url}")
+    logError(f"Could not load page after 5 tries: {url}")
+    raise SystemExit
 
 
 def parse_recipe_links_page(text: str):
@@ -169,7 +181,12 @@ async def fetch_recipe(session: aiohttp.ClientSession, rel_link: str):
     level_adjustment = 0
     if base_level in LEVEL_DIFF:
         stars = len(detail_box.xpath("//div[@class='db-view__item__text__level']//span[contains(@class, 'star')]"))
-        level_adjustment = LEVEL_DIFF[base_level][stars]
+        try:
+            level_adjustment = LEVEL_DIFF[base_level][stars]
+        except IndexError:
+            logError(f"Unsupported number of stars ({stars}) for level {base_level}.")
+            raise SystemExit
+
     level = base_level + level_adjustment
 
     craft_data = tree.xpath("//ul[@class='db-view__recipe__craftdata']")[0]
