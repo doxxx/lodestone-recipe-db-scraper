@@ -91,7 +91,7 @@ async def fetch(session: aiohttp.ClientSession, url: str, **kwargs):
                 async with session.get(url, **kwargs) as res:
                     if res.status == 429:
                         retry_after = int(res.headers["retry-after"] or '5')
-                        asyncio.sleep(retry_after)
+                        await asyncio.sleep(retry_after)
                         continue
                     elif res.status != 200:
                         raise Exception(f"{res.status} {res.reason}")
@@ -100,7 +100,7 @@ async def fetch(session: aiohttp.ClientSession, url: str, **kwargs):
             raise
         except:
             err_count += 1
-            asyncio.sleep(5)
+            await asyncio.sleep(5)
             pass
     logError(f"Could not load page after 5 tries: {url}")
     raise SystemExit
