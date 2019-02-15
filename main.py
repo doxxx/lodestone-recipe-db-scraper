@@ -60,8 +60,12 @@ LEVEL_DIFF = {
     70: [ 220, 230, 250, 280, 310 ], # 290, 300, 320, 350, 380
 }
 
-LEVEL_RANGE = ["{0}-{1}".format(start, start + 4) for start in range(1, 70, 5)]
-NUM_LEVEL_RANGES = len(LEVEL_RANGE)
+MAX_LEVEL = 70
+LEVEL_RANGES = ["{0}-{1}".format(start, start + 4) for start in range(1, MAX_LEVEL, 5)]
+NUM_LEVEL_RANGES = len(LEVEL_RANGES)
+NUM_ADDITIONAL_CATEGORIES = 6
+LINK_CATEGORIES = ['%d' % (level_range,) for level_range in range(0, NUM_LEVEL_RANGES)] + \
+                  ['c%d' % (cat,) for cat in range(1, NUM_ADDITIONAL_CATEGORIES+1)]
 
 EMBED_CODE_RE = re.compile("\\[db:recipe=([0-9a-f]+)]")
 
@@ -86,12 +90,13 @@ async def wait_with_progress(coros: list, desc: str = None, unit: str = None):
 async def fetch(session: aiohttp.ClientSession, url: str, **kwargs):
     err_count = 0
     while err_count < 5:
+        # noinspection PyBroadException
         try:
             async with FETCH_SEMAPHORE:
                 async with session.get(url, **kwargs) as res:
                     if res.status == 429:
                         retry_after = int(res.headers["retry-after"] or '5')
-                        asyncio.sleep(retry_after)
+                        await asyncio.sleep(retry_after)
                         continue
                     elif res.status != 200:
                         raise Exception(f"{res.status} {res.reason}")
@@ -100,7 +105,7 @@ async def fetch(session: aiohttp.ClientSession, url: str, **kwargs):
             raise
         except:
             err_count += 1
-            asyncio.sleep(5)
+            await asyncio.sleep(5)
             pass
     logError(f"Could not load page after 5 tries: {url}")
     raise SystemExit
@@ -115,20 +120,20 @@ def parse_recipe_links_page(text: str):
     return links, show_end, total
 
 
-async def fetch_recipe_links_page(session: aiohttp.ClientSession, cls: str, level_range: int, page: int):
+async def fetch_recipe_links_page(session: aiohttp.ClientSession, cls: str, category: str, page: int):
     params = {
         "category2": CLASSES.index(cls),
-        "category3": level_range,
+        "category3": category,
         "page": page,
     }
     return parse_recipe_links_page(await fetch(session, RECIPE_LIST_URL, params=params))
 
 
-async def fetch_recipe_links_range(session: aiohttp.ClientSession, cls: str, level_range: int):
+async def fetch_recipe_links_range(session: aiohttp.ClientSession, cls: str, category: str):
     links = []
     page = 1
     while True:
-        page_links, show_end, total = await fetch_recipe_links_page(session, cls, level_range, page)
+        page_links, show_end, total = await fetch_recipe_links_page(session, cls, category, page)
         links += page_links
         if show_end < total:
             page += 1
@@ -139,7 +144,7 @@ async def fetch_recipe_links_range(session: aiohttp.ClientSession, cls: str, lev
 
 async def fetch_recipe_links(session: aiohttp.ClientSession, cls: str):
     results = wait_with_progress(
-        [fetch_recipe_links_range(session, cls, level_range) for level_range in range(0, NUM_LEVEL_RANGES)],
+        [fetch_recipe_links_range(session, cls, category) for category in LINK_CATEGORIES],
         desc=f"Fetching {cls} links",
         unit=""
     )
@@ -259,7 +264,7 @@ async def fetch_class(session: aiohttp.ClientSession, additional_languages: dict
 
 async def scrape_to_file(session: aiohttp.ClientSession, additional_languages: dict, cls: str):
     recipes = await fetch_class(session, additional_languages, cls)
-    with open("out/" + cls + ".json", mode="wt", encoding="utf-8") as db_file:
+    with open(f"out/{cls}.json", mode="wt", encoding="utf-8") as db_file:
         json.dump(recipes, db_file, indent=2, sort_keys=True, ensure_ascii=False)
 
 
