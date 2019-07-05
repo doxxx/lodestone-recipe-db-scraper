@@ -3,5 +3,4 @@ out/
 *.sqlite
 *.sqlite-journal
 __pycache__/
-lxenv/
-wenv/
+venv/
