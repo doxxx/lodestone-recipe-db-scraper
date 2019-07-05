@@ -273,6 +273,19 @@ async def scrape_classes(session: aiohttp.ClientSession, additional_languages: d
         await scrape_to_file(session, additional_languages, cls)
 
 
+async def async_main(concurrency, additional_languages):
+    global FETCH_SEMAPHORE
+    FETCH_SEMAPHORE = asyncio.Semaphore(concurrency)
+    session = aiohttp.ClientSession()
+
+    try:
+        await scrape_classes(session, additional_languages)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        await session.close()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -301,17 +314,9 @@ def main():
                 additional_languages[lang] = json.load(fp)
 
     loop = asyncio.get_event_loop()
-
-    global FETCH_SEMAPHORE
-    FETCH_SEMAPHORE = asyncio.Semaphore(int(args.concurrency), loop=loop)
-    session = aiohttp.ClientSession(loop=loop)
-
     try:
-        loop.run_until_complete(scrape_classes(session, additional_languages))
-    except KeyboardInterrupt:
-        pass
+        loop.run_until_complete(async_main(int(args.concurrency), additional_languages))
     finally:
-        session.close()
         loop.close()
 
 
