@@ -70,7 +70,7 @@ LEVEL_DIFF = {
     80: [ 340, 350 ], # 420, 430
 }
 
-MAX_LEVEL = 70
+MAX_LEVEL = 80
 LEVEL_RANGES = ["{0}-{1}".format(start, start + 4) for start in range(1, MAX_LEVEL, 5)]
 NUM_LEVEL_RANGES = len(LEVEL_RANGES)
 NUM_ADDITIONAL_CATEGORIES = 6
