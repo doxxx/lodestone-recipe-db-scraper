@@ -3,12 +3,16 @@ import argparse
 import json
 import re
 import sys
+from typing import Mapping, Sequence
 from urllib.parse import urlunparse
 
 import lxml.html as html
 import asyncio
 import aiohttp
 import tqdm
+
+# type definitions
+LanguageMapping = Mapping[str,Mapping[str,str]]
 
 # Restore default Ctrl-C handler for faster process shutdown
 signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -23,14 +27,14 @@ LANG_HOSTS = {
 }
 
 CLASSES = [
-    "Carpenter",
-    "Blacksmith",
-    "Armorer",
-    "Goldsmith",
-    "Leatherworker",
-    "Weaver",
-    "Alchemist",
-    "Culinarian",
+    "carpenter",
+    "blacksmith",
+    "armorer",
+    "goldsmith",
+    "leatherworker",
+    "weaver",
+    "alchemist",
+    "culinarian",
 ]
 
 # recipe level -> [ 0-star adjustment, 1-star adjustment, ... ]
@@ -155,7 +159,7 @@ async def fetch_recipe_links_range(session: aiohttp.ClientSession, cls: str, cat
 async def fetch_recipe_links(session: aiohttp.ClientSession, cls: str):
     results = wait_with_progress(
         [fetch_recipe_links_range(session, cls, category) for category in LINK_CATEGORIES],
-        desc=f"Fetching {cls} links",
+        desc=f"Fetching {cls.capitalize()} links",
         unit=""
     )
 
@@ -250,17 +254,17 @@ async def fetch_recipe(session: aiohttp.ClientSession, rel_link: str):
     return recipe
 
 
-async def fetch_recipes(session: aiohttp.ClientSession, cls: str, links: list):
+async def fetch_recipes(session: aiohttp.ClientSession, cls: str, links: Sequence[str]):
     recipes = wait_with_progress(
         [fetch_recipe(session, link) for link in links],
-        desc=f"Fetching {cls} recipes",
+        desc=f"Fetching {cls.capitalize()} recipes",
         unit=""
     )
 
     return [r async for r in recipes]
 
 
-async def fetch_class(session: aiohttp.ClientSession, additional_languages: dict, cls: str):
+async def fetch_class(session: aiohttp.ClientSession, additional_languages: LanguageMapping, cls: str):
     links = await fetch_recipe_links(session, cls)
     recipes = await fetch_recipes(session, cls, links)
     recipes.sort(key=lambda r: (r['level'], r['name']['en']))
@@ -272,60 +276,83 @@ async def fetch_class(session: aiohttp.ClientSession, additional_languages: dict
     return recipes
 
 
-async def scrape_to_file(session: aiohttp.ClientSession, additional_languages: dict, cls: str):
+async def scrape_to_file(session: aiohttp.ClientSession, additional_languages: LanguageMapping, cls: str):
     recipes = await fetch_class(session, additional_languages, cls)
     with open(f"out/{cls}.json", mode="wt", encoding="utf-8") as db_file:
         json.dump(recipes, db_file, indent=2, sort_keys=True, ensure_ascii=False)
 
 
-async def scrape_classes(session: aiohttp.ClientSession, additional_languages: dict):
-    for cls in CLASSES:
+async def scrape_classes(session: aiohttp.ClientSession, classes: Sequence[str], additional_languages: LanguageMapping):
+    for cls in classes:
         await scrape_to_file(session, additional_languages, cls)
 
 
-async def async_main(concurrency, additional_languages):
+def load_additional_languages(specs: Sequence[str]) -> LanguageMapping:
+    additional_languages = {}
+    for s in specs:
+        lang, path = s.split("=", 2)
+        with open(path, mode="rt", encoding="utf-8") as fp:
+            print(f"Loading additional language '{lang}' from: {path}")
+            additional_languages[lang] = json.load(fp)
+    return additional_languages
+
+
+async def async_main(args):
     global FETCH_SEMAPHORE
-    FETCH_SEMAPHORE = asyncio.Semaphore(concurrency)
+    FETCH_SEMAPHORE = asyncio.Semaphore(args.concurrency)
     session = aiohttp.ClientSession()
 
+    if args.lang_file:
+        additional_languages = load_additional_languages(args.lang_file)
+    else:
+        additional_languages = {}
+
     try:
-        await scrape_classes(session, additional_languages)
+        if args.recipes:
+            classes = [cls.lower() for cls in args.recipes]
+            if "all" in classes:
+                classes = CLASSES
+            await scrape_classes(session, classes, additional_languages)
     except KeyboardInterrupt:
         pass
     finally:
         await session.close()
 
 
-def main():
+def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c",
         "--concurrency",
+        metavar="N",
         help="Max number of concurrent requests to Lodestone servers. [Default: 8]",
         default=8,
-        metavar="N"
+        type=int,
     )
     parser.add_argument(
         "-l",
         "--lang-file",
-        help="Language code and path to file that defines mappings from English recipe names to another language.",
         metavar="LANG=FILE",
-        action="append"
+        help="Language code and path to file that defines mappings from English names to another language.",
+        action="append",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "-r",
+        "--recipes",
+        metavar="CLASS",
+        help=f"Scrape recipes for a class. Can be specified more than once to collect multiple classes, or use 'all' to collect all classes. Classes: {', '.join(CLASSES)}",
+        action="append",
+        choices=CLASSES,
+    )
+    return parser.parse_args()
 
-    # Load additional language files
-    additional_languages = {}
-    if args.lang_file:
-        for f in args.lang_file:
-            lang, path = f.split("=", 2)
-            with open(path, mode="rt", encoding="utf-8") as fp:
-                print(f"Loading additional language '{lang}' from: {path}")
-                additional_languages[lang] = json.load(fp)
+
+def main():
+    args = parse_args()
 
     loop = asyncio.get_event_loop()
     try:
-        loop.run_until_complete(async_main(int(args.concurrency), additional_languages))
+        loop.run_until_complete(async_main(args))
     finally:
         loop.close()
 
