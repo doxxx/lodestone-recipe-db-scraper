@@ -486,10 +486,6 @@ def load_additional_languages(specs: Sequence[str]) -> LanguageMapping:
 
 
 async def async_main(args):
-    global FETCH_SEMAPHORE
-    FETCH_SEMAPHORE = asyncio.Semaphore(args.concurrency)
-    session = aiohttp.ClientSession()
-
     if not args.recipes and not args.buffs:
         print("ERROR: One or more of the following options must be provided: --recipes, --buffs", file=sys.stderr)
         return
@@ -501,6 +497,10 @@ async def async_main(args):
         additional_languages = load_additional_languages(args.lang_file)
     else:
         additional_languages = {}
+
+    global FETCH_SEMAPHORE
+    FETCH_SEMAPHORE = asyncio.Semaphore(args.concurrency)
+    session = aiohttp.ClientSession()
 
     try:
         if args.recipes:
