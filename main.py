@@ -1,14 +1,18 @@
-import signal
 import argparse
+import asyncio
+import hashlib
 import json
+import os
 import re
+import shutil
+import signal
 import sys
+import time
 from typing import Mapping, Sequence
 from urllib.parse import urlunparse
 
-import lxml.html as html
-import asyncio
 import aiohttp
+import lxml.html as html
 import tqdm
 
 # type definitions
@@ -18,6 +22,9 @@ LanguageMapping = Mapping[str,Mapping[str,str]]
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 RECIPE_LIST_URL = "http://na.finalfantasyxiv.com/lodestone/playguide/db/recipe/"
+ITEM_LIST_URL = "http://na.finalfantasyxiv.com/lodestone/playguide/db/item/"
+
+CACHE_EXPIRY = 60*60*12 # 12 hours, in seconds
 
 LANG_HOSTS = {
     "en": "na.finalfantasyxiv.com",
@@ -77,13 +84,23 @@ LEVEL_DIFF = {
 MAX_LEVEL = 80
 LEVEL_RANGES = ["{0}-{1}".format(start, start + 4) for start in range(1, MAX_LEVEL, 5)]
 NUM_LEVEL_RANGES = len(LEVEL_RANGES)
-NUM_ADDITIONAL_CATEGORIES = 6
-LINK_CATEGORIES = ['%d' % (level_range,) for level_range in range(0, NUM_LEVEL_RANGES)] + \
-                  ['c%d' % (cat,) for cat in range(1, NUM_ADDITIONAL_CATEGORIES+1)]
+NUM_ADDITIONAL_RECIPE_CATEGORIES = 6
+RECIPE_LINK_CATEGORIES = ['%d' % (level_range,) for level_range in range(0, NUM_LEVEL_RANGES)] + \
+                         ['c%d' % (cat,) for cat in range(1, NUM_ADDITIONAL_RECIPE_CATEGORIES + 1)]
 
-EMBED_CODE_RE = re.compile("\\[db:recipe=([0-9a-f]+)]")
-
+EMBED_CODE_RE = re.compile("\\[db:[a-z]+=([0-9a-f]+)]")
 ASPECT_RE = re.compile("Aspect: (.+)")
+ITEM_CRAFTSMANSHIP_RE = re.compile(r"Craftsmanship \+([0-9]+)% \(Max ([0-9]+)\)")
+ITEM_CONTROL_RE = re.compile(r"Control \+([0-9]+)% \(Max ([0-9]+)\)")
+ITEM_CP_RE = re.compile(r"CP \+([0-9]+)% \(Max ([0-9]+)\)")
+
+ITEM_CAT_MEDICINE = 44
+ITEM_CAT_MEAL = 46
+
+ITEM_CATEGORIES = {
+    44: "Medicine",
+    46: "Meal",
+}
 
 FETCH_SEMAPHORE: asyncio.Semaphore
 
@@ -101,7 +118,47 @@ async def wait_with_progress(coros: list, desc: str = None, unit: str = None):
         yield await f
 
 
+def get_cache_key(url: str, **kwargs):
+    m = hashlib.sha1()
+    m.update(bytes(url, "UTF-8"))
+    sorted_keys = list(kwargs.keys())
+    sorted_keys.sort()
+    for k in sorted_keys:
+        m.update(bytes(str(k), "UTF-8"))
+        m.update(b"=")
+        m.update(bytes(str(kwargs[k]), "UTF-8"))
+        m.update(b";")
+    return m.hexdigest()
+
+
+def get_cached_text(url: str, **kwargs):
+    key = get_cache_key(url, **kwargs)
+    os.makedirs(".cache", exist_ok=True)
+    filename = f".cache/{key}"
+    try:
+        s = os.stat(filename)
+        if s.st_mtime < time.time() - CACHE_EXPIRY:
+            os.remove(filename)
+            return None
+        with open(filename, mode="rt", encoding="UTF-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+
+
+def cache_text(text: str, url: str, **kwargs):
+    key = get_cache_key(url, **kwargs)
+    os.makedirs(".cache", exist_ok=True)
+    with open(f".cache/{key}", mode="wt", encoding="UTF-8") as f:
+        f.write(text)
+
+
 async def fetch(session: aiohttp.ClientSession, url: str, **kwargs):
+    # TODO: cache files
+    cached_text = get_cached_text(url, **kwargs)
+    if cached_text is not None:
+        return cached_text
+
     err_count = 0
     while err_count < 5:
         # noinspection PyBroadException
@@ -114,7 +171,9 @@ async def fetch(session: aiohttp.ClientSession, url: str, **kwargs):
                         continue
                     elif res.status != 200:
                         raise Exception(f"{res.status} {res.reason}")
-                    return await res.text()
+                    text = await res.text()
+                    cache_text(text, url, **kwargs)
+                    return text
         except SystemExit:
             raise
         except:
@@ -125,7 +184,7 @@ async def fetch(session: aiohttp.ClientSession, url: str, **kwargs):
     raise SystemExit
 
 
-def parse_recipe_links_page(text: str):
+def parse_links_page(text: str) -> (Sequence[str], int, int):
     tree = html.fromstring(text)
     rel_links = tree.xpath("//div/@data-ldst-href")
     links = map(str, rel_links)
@@ -134,13 +193,13 @@ def parse_recipe_links_page(text: str):
     return links, show_end, total
 
 
-async def fetch_recipe_links_page(session: aiohttp.ClientSession, cls: str, category: str, page: int):
+async def fetch_recipe_links_page(session: aiohttp.ClientSession, cls: str, category: str, page: int) -> (Sequence[str], int, int):
     params = {
         "category2": CLASSES.index(cls),
         "category3": category,
         "page": page,
     }
-    return parse_recipe_links_page(await fetch(session, RECIPE_LIST_URL, params=params))
+    return parse_links_page(await fetch(session, RECIPE_LIST_URL, params=params))
 
 
 async def fetch_recipe_links_range(session: aiohttp.ClientSession, cls: str, category: str):
@@ -158,7 +217,7 @@ async def fetch_recipe_links_range(session: aiohttp.ClientSession, cls: str, cat
 
 async def fetch_recipe_links(session: aiohttp.ClientSession, cls: str):
     results = wait_with_progress(
-        [fetch_recipe_links_range(session, cls, category) for category in LINK_CATEGORIES],
+        [fetch_recipe_links_range(session, cls, category) for category in RECIPE_LINK_CATEGORIES],
         desc=f"Fetching {cls.capitalize()} links",
         unit=""
     )
@@ -170,29 +229,33 @@ async def fetch_recipe_links(session: aiohttp.ClientSession, cls: str):
     return links
 
 
-def make_recipe_url(lang: str, rel_link: str):
+def make_lang_url(lang: str, rel_link: str):
     return urlunparse(("http", LANG_HOSTS[lang], rel_link, "", "", ""))
 
 
-async def fetch_recipe_pages(session: aiohttp.ClientSession, rel_link: str):
+async def fetch_pages_all_langs(session: aiohttp.ClientSession, rel_link: str):
     pages = {}
 
     for lang in LANG_HOSTS:
-        pages[lang] = html.fromstring(await fetch(session, make_recipe_url(lang, rel_link)))
+        pages[lang] = html.fromstring(await fetch(session, make_lang_url(lang, rel_link)))
 
     return pages
 
 
+def extract_db_id(tree) -> str:
+    embed_code = tree.xpath("//div[@class='embed_code_txt']//div[contains(text(), 'db:')]/text()")[0]
+    match = EMBED_CODE_RE.match(embed_code)
+    if match is None:
+        raise Exception("embed id not found")
+    return match.group(1)
+
+
 async def fetch_recipe(session: aiohttp.ClientSession, rel_link: str):
-    pages = await fetch_recipe_pages(session, rel_link)
+    pages = await fetch_pages_all_langs(session, rel_link)
 
     tree = pages["en"]
 
-    embed_code = tree.xpath("//div[@class='embed_code_txt']//div[contains(text(), 'db:recipe')]/text()")[0]
-    match = EMBED_CODE_RE.match(embed_code)
-    if match is None:
-        raise Exception("recipe id not found")
-    recipe_id = match.group(1)
+    recipe_id = extract_db_id(tree)
 
     detail_box = tree.xpath("//div[@class='recipe_detail item_detail_box']")[0]
     base_level = int(detail_box.xpath("//span[@class='db-view__item__text__level__num']/text()")[0])
@@ -276,15 +339,140 @@ async def fetch_class(session: aiohttp.ClientSession, additional_languages: Lang
     return recipes
 
 
-async def scrape_to_file(session: aiohttp.ClientSession, additional_languages: LanguageMapping, cls: str):
-    recipes = await fetch_class(session, additional_languages, cls)
-    with open(f"out/{cls}.json", mode="wt", encoding="utf-8") as db_file:
-        json.dump(recipes, db_file, indent=2, sort_keys=True, ensure_ascii=False)
-
-
-async def scrape_classes(session: aiohttp.ClientSession, classes: Sequence[str], additional_languages: LanguageMapping):
+async def scrape_classes(session: aiohttp.ClientSession, additional_languages: LanguageMapping, classes: Sequence[str]):
     for cls in classes:
-        await scrape_to_file(session, additional_languages, cls)
+        recipes = await fetch_class(session, additional_languages, cls)
+        with open(f"out/{cls}.json", mode="wt", encoding="utf-8") as db_file:
+            json.dump(recipes, db_file, indent=2, sort_keys=True, ensure_ascii=False)
+
+
+async def fetch_item_links_page(session: aiohttp.ClientSession, category: int, page: int):
+    params = {
+        "category2": 5,
+        "category3": category,
+        "page": page,
+    }
+    return parse_links_page(await fetch(session, ITEM_LIST_URL, params=params))
+
+
+async def fetch_item_links_range(session: aiohttp.ClientSession, category: int):
+    links = []
+    page = 1
+    while True:
+        page_links, show_end, total = await fetch_item_links_page(session, category, page)
+        links += page_links
+        if show_end < total:
+            page += 1
+        else:
+            break
+    return links
+
+
+async def fetch_item_links(session: aiohttp.ClientSession, category: int):
+    results = wait_with_progress(
+        [fetch_item_links_range(session, category)],
+        desc=f"Fetching {ITEM_CATEGORIES[category]} links",
+        unit=""
+    )
+
+    links = []
+    async for r in results:
+        links.extend(r)
+
+    return links
+
+
+def extract_item_attr(text, item):
+    found_attr = False
+
+    for m in ITEM_CRAFTSMANSHIP_RE.finditer(text):
+        found_attr = True
+        item["craftsmanship_percent"] = int(m.group(1))
+        item["craftsmanship_value"] = int(m.group(2))
+
+    for m in ITEM_CONTROL_RE.finditer(text):
+        found_attr = True
+        item["control_percent"] = int(m.group(1))
+        item["control_value"] = int(m.group(2))
+
+    for m in ITEM_CP_RE.finditer(text):
+        found_attr = True
+        item["cp_percent"] = int(m.group(1))
+        item["cp_value"] = int(m.group(2))
+
+    return found_attr
+
+
+async def fetch_item(session: aiohttp.ClientSession, rel_link: str) -> (dict, dict):
+    pages = await fetch_pages_all_langs(session, rel_link)
+
+    tree = pages["en"]
+
+    item_id = extract_db_id(tree)
+
+    item_nq = {
+        "id": item_id,
+        "name": {},
+        "hq": False,
+    }
+
+    item_hq = {
+        "id": item_id,
+        "name": {},
+        "hq": True,
+    }
+
+    info_text_div = tree.xpath("//div[@class='db-view__info_text']")[0]
+    info_text_nq = "".join(info_text_div.xpath("//ul[@class='sys_nq_element']//text()")).strip()
+    info_text_hq = "".join(info_text_div.xpath("//ul[@class='sys_hq_element']//text()")).strip()
+
+    print(f"{item_id}: nq={repr(info_text_nq)}")
+    print(f"{item_id}: hq={repr(info_text_hq)}")
+
+    has_nq_attr = extract_item_attr(info_text_nq, item_nq)
+    has_hq_attr = extract_item_attr(info_text_hq, item_hq)
+    if not has_nq_attr and not has_hq_attr:
+        return []
+
+    print(f"{item_id}: nq={repr(item_nq)}")
+    print(f"{item_id}: hq={repr(item_hq)}")
+
+    for lang in LANG_HOSTS:
+        tree = pages[lang]
+        item_nq["name"][lang] = str(tree.xpath("//h2[contains(@class,'db-view__item__text__name')]/text()")[0]).strip()
+        item_hq["name"][lang] = str(tree.xpath("//h2[contains(@class,'db-view__item__text__name')]/text()")[0]).strip()
+
+    return [item_nq, item_hq]
+
+
+async def fetch_items(session: aiohttp.ClientSession, links: Sequence[str]):
+    items = wait_with_progress(
+        [fetch_item(session, link) for link in links],
+        desc=f"Fetching items",
+        unit=""
+    )
+
+    return [item async for nq_hq in items for item in nq_hq]
+
+
+async def fetch_items_category(session: aiohttp.ClientSession, additional_languages: LanguageMapping, category: int):
+    links = await fetch_item_links(session, category)
+    items = await fetch_items(session, links)
+    items.sort(key=lambda r: r['name']['en'])
+    for item  in items:
+        for lang in additional_languages.keys():
+            names = additional_languages[lang]
+            english_name = item['name']['en']
+            item['name'][lang] = names.get(english_name) or english_name
+    return items
+
+
+async def scrape_buffs(session: aiohttp.ClientSession, additional_languages: LanguageMapping):
+    for category in ITEM_CATEGORIES.keys():
+        category_name = ITEM_CATEGORIES[category]
+        items = await fetch_items_category(session, additional_languages, category)
+        with open(f"out/{category_name}.json", mode="wt", encoding="utf-8") as db_file:
+            json.dump(items, db_file, indent=2, sort_keys=True, ensure_ascii=False)
 
 
 def load_additional_languages(specs: Sequence[str]) -> LanguageMapping:
@@ -302,6 +490,13 @@ async def async_main(args):
     FETCH_SEMAPHORE = asyncio.Semaphore(args.concurrency)
     session = aiohttp.ClientSession()
 
+    if not args.recipes and not args.buffs:
+        print("ERROR: One or more of the following options must be provided: --recipes, --buffs", file=sys.stderr)
+        return
+
+    if args.clear_cache:
+        shutil.rmtree(".cache")
+
     if args.lang_file:
         additional_languages = load_additional_languages(args.lang_file)
     else:
@@ -312,7 +507,9 @@ async def async_main(args):
             classes = [cls.lower() for cls in args.recipes]
             if "all" in classes:
                 classes = CLASSES
-            await scrape_classes(session, classes, additional_languages)
+            await scrape_classes(session, additional_languages, classes)
+        if args.buffs:
+            await scrape_buffs(session, additional_languages)
     except KeyboardInterrupt:
         pass
     finally:
@@ -342,7 +539,18 @@ def parse_args():
         metavar="CLASS",
         help=f"Scrape recipes for a class. Can be specified more than once to collect multiple classes, or use 'all' to collect all classes. Classes: {', '.join(CLASSES)}",
         action="append",
-        choices=CLASSES,
+        choices=['all'] + CLASSES,
+    )
+    parser.add_argument(
+        "-b",
+        "--buffs",
+        help="Scrap buff items.",
+        action="store_true"
+    )
+    parser.add_argument(
+        "--clear-cache",
+        help="Clear the download cache.",
+        action="store_true",
     )
     return parser.parse_args()
 

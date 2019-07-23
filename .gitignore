@@ -4,3 +4,4 @@ out/
 *.sqlite-journal
 __pycache__/
 venv/
+.cache/
