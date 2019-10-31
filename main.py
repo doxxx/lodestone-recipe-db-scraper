@@ -78,7 +78,7 @@ LEVEL_DIFF = {
     77: [ 335 ], # 412
     78: [ 337 ], # 415
     79: [ 339 ], # 418
-    80: [ 340, 350 ], # 420, 430
+    80: [ 350, 360, 370 ], # 430, 440, 460
 }
 
 MAX_LEVEL = 80
@@ -426,16 +426,10 @@ async def fetch_item(session: aiohttp.ClientSession, rel_link: str) -> (dict, di
     info_text_nq = "".join(info_text_div.xpath("//ul[@class='sys_nq_element']//text()")).strip()
     info_text_hq = "".join(info_text_div.xpath("//ul[@class='sys_hq_element']//text()")).strip()
 
-    print(f"{item_id}: nq={repr(info_text_nq)}")
-    print(f"{item_id}: hq={repr(info_text_hq)}")
-
     has_nq_attr = extract_item_attr(info_text_nq, item_nq)
     has_hq_attr = extract_item_attr(info_text_hq, item_hq)
     if not has_nq_attr and not has_hq_attr:
         return []
-
-    print(f"{item_id}: nq={repr(item_nq)}")
-    print(f"{item_id}: hq={repr(item_hq)}")
 
     for lang in LANG_HOSTS:
         tree = pages[lang]
