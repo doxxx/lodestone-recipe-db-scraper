@@ -32,7 +32,7 @@ It will output its progress to stdout and generate `json` files in the `out` sub
 
 The `-l` option includes names in languages not supported by the Lodestone, e.g. Chinese. The option must be provided as `LANG=FILE`, where `LANG` is the two-letter code identifying the language and `FILE` is the path to the file containing the translations. The file must contain a JSON object with the English recipe names as the keys and the translated names as the values. You can specify the `-l` option multiple times to add multiple languages.
 
-You can specify a class e.g. `alchemist` instead of `all` in the `-r` option.
+You can specify a class e.g. `alchemist` instead of `all` in the `-r` option. The `-r` option can be specified more than once to collect multiple classes.
 
 Alternatively, you can run `add_other_lang.py` with one or more `LANG=FILE` arguments to update an existing set of output files with translations for additional languages, without needing to re-scrape.
 
