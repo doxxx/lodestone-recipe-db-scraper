@@ -342,7 +342,7 @@ async def fetch_class(session: aiohttp.ClientSession, additional_languages: Lang
 async def scrape_classes(session: aiohttp.ClientSession, additional_languages: LanguageMapping, classes: Sequence[str]):
     for cls in classes:
         recipes = await fetch_class(session, additional_languages, cls)
-        with open(f"out/{cls}.json", mode="wt", encoding="utf-8") as db_file:
+        with open(f"out/{cls.capitalize()}.json", mode="wt", encoding="utf-8") as db_file:
             json.dump(recipes, db_file, indent=2, sort_keys=True, ensure_ascii=False)
 
 
