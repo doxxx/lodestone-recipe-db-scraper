@@ -90,6 +90,8 @@ RECIPE_LINK_CATEGORIES = ['%d' % (level_range,) for level_range in range(0, NUM_
 
 EMBED_CODE_RE = re.compile("\\[db:[a-z]+=([0-9a-f]+)]")
 ASPECT_RE = re.compile("Aspect: (.+)")
+RECIPE_CRAFTSMANSHIP_RE = re.compile("Craftsmanship (?:Required|Recommended): ([0-9]+)")
+RECIPE_CONTROL_RE = re.compile("Control (?:Required|Recommended): ([0-9]+)")
 ITEM_CRAFTSMANSHIP_RE = re.compile(r"Craftsmanship \+([0-9]+)% \(Max ([0-9]+)\)")
 ITEM_CONTROL_RE = re.compile(r"Control \+([0-9]+)% \(Max ([0-9]+)\)")
 ITEM_CP_RE = re.compile(r"CP \+([0-9]+)% \(Max ([0-9]+)\)")
@@ -274,7 +276,7 @@ async def fetch_recipe(session: aiohttp.ClientSession, rel_link: str):
     craft_data = tree.xpath("//ul[@class='db-view__recipe__craftdata']")[0]
     difficulty = int(craft_data.xpath("li[span='Difficulty']/text()")[0])
     durability = int(craft_data.xpath("li[span='Durability']/text()")[0])
-    maxQuality = int(craft_data.xpath("li[span='Maximum Quality']/text()")[0])
+    max_quality = int(craft_data.xpath("li[span='Maximum Quality']/text()")[0])
 
     # Base level 51 recipes of difficulty 169 or 339 are adjusted to level 115
     # instead of the default 120 that other level 51 recipes are adjusted to.
@@ -286,6 +288,8 @@ async def fetch_recipe(session: aiohttp.ClientSession, rel_link: str):
         level += 10
 
     aspect = None
+    suggested_craftsmanship = None
+    suggested_control = None
 
     craft_conditions = tree.xpath("//dl[@class='db-view__recipe__crafting_conditions']")[0]
     for characteristic in craft_conditions.xpath("dt[text()='Characteristics']/../dd/text()"):
@@ -293,6 +297,12 @@ async def fetch_recipe(session: aiohttp.ClientSession, rel_link: str):
         match = ASPECT_RE.match(characteristic)
         if not match is None:
             aspect = match.group(1)
+        match = RECIPE_CRAFTSMANSHIP_RE.match(characteristic)
+        if not match is None:
+            suggested_craftsmanship = int(match.group(1))
+        match = RECIPE_CONTROL_RE.match(characteristic)
+        if not match is None:
+            suggested_control = int(match.group(1))
 
     recipe = {
         "id": recipe_id,
@@ -301,7 +311,7 @@ async def fetch_recipe(session: aiohttp.ClientSession, rel_link: str):
         "level": level,
         "difficulty": difficulty,
         "durability": durability,
-        "maxQuality": maxQuality,
+        "maxQuality": max_quality,
     }
 
     if stars:
@@ -309,6 +319,12 @@ async def fetch_recipe(session: aiohttp.ClientSession, rel_link: str):
 
     if aspect:
         recipe["aspect"] = aspect
+
+    if suggested_craftsmanship:
+        recipe["suggestedCraftsmanship"] = suggested_craftsmanship
+
+    if suggested_control:
+        recipe["suggestedControl"] = suggested_control
 
     for lang in LANG_HOSTS:
         tree = pages[lang]
@@ -342,7 +358,7 @@ async def fetch_class(session: aiohttp.ClientSession, additional_languages: Lang
 async def scrape_classes(session: aiohttp.ClientSession, additional_languages: LanguageMapping, classes: Sequence[str]):
     for cls in classes:
         recipes = await fetch_class(session, additional_languages, cls)
-        with open(f"out/{cls}.json", mode="wt", encoding="utf-8") as db_file:
+        with open(f"out/{cls.capitalize()}.json", mode="wt", encoding="utf-8") as db_file:
             json.dump(recipes, db_file, indent=2, sort_keys=True, ensure_ascii=False)
 
 
