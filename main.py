@@ -84,7 +84,7 @@ LEVEL_DIFF = {
 MAX_LEVEL = 80
 LEVEL_RANGES = ["{0}-{1}".format(start, start + 4) for start in range(1, MAX_LEVEL, 5)]
 NUM_LEVEL_RANGES = len(LEVEL_RANGES)
-NUM_ADDITIONAL_RECIPE_CATEGORIES = 7
+NUM_ADDITIONAL_RECIPE_CATEGORIES = 8
 RECIPE_LINK_CATEGORIES = ['%d' % (level_range,) for level_range in range(0, NUM_LEVEL_RANGES)] + \
                          ['c%d' % (cat,) for cat in range(1, NUM_ADDITIONAL_RECIPE_CATEGORIES + 1)]
 
