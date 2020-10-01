@@ -2,7 +2,7 @@
 
 This project provides a tool which scrapes recipe information from the Lodestone website's Eorzea Database. It extracts recipes for all classes, levels 1-60, including the English, German, French and Japanese names. Each class' recipes are written out to a separate JSON file in the order defined by the Lodestone's recipe listings.
 
-# Pre-requisites
+# Pre-requisites Amazing
 
 This project uses Python 3.4 (or newer) and describes its dependencies in a pip `requirements.txt` file. You can install all the packages required by running:
 
